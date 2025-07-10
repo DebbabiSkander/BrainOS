@@ -20,9 +20,9 @@ from functools import lru_cache
 import time
 
 # Import authentication modules
-from database import db, init_db, User, UploadedFile, ActivityLog, UserRole
+# Import authentication modules - FIXED IMPORTS
+from database import db, init_db, User, UploadedFile, ActivityLog, UserRole, UserStatus
 from auth import auth_bp
-
 # Check if trimesh is available
 try:
     import trimesh
@@ -398,25 +398,47 @@ def health_check():
     """Health check endpoint"""
     return jsonify({'status': 'healthy', 'message': 'Flask backend is running'})
 
+# Updated upload route for app.py - handles new trial system
+
 @app.route('/api/upload', methods=['POST'])
 @jwt_required()
 def upload_file():
-    """Upload and process NIFTI file (authenticated)"""
+    """Upload and process NIFTI file with trial limits"""
     try:
         # Get current user
         user_id_str = get_jwt_identity()
         user_id = int(user_id_str)
         user = User.query.get(user_id)
         
-        print(f"📁 Upload request from user: {user.email}")
+        print(f"📁 Upload request from user: {user.email} (Status: {user.status.value})")
         
-        # Check if user is approved and trial is active (except for admins)
-        if user.role != UserRole.ADMIN:
-            if user.status.value != 'approved':
-                return jsonify({'error': 'Compte non approuvé'}), 403
+        # Check if user can upload
+        can_upload, upload_message = user.can_upload()
+        
+        if not can_upload:
+            print(f"🚫 Upload denied for {user.email}: {upload_message}")
             
-            if not user.is_trial_active():
-                return jsonify({'error': 'Période d\'essai expirée'}), 403
+            # Return specific error based on user status
+            if user.status == UserStatus.SUSPENDED:
+                return jsonify({
+                    'error': upload_message,
+                    'status': 'suspended',
+                    'message': 'Votre période d\'essai a expiré ou vous avez atteint la limite de téléchargements.',
+                    'action_required': 'Demandez l\'approbation d\'un administrateur pour continuer.',
+                    'user_info': user.to_dict()
+                }), 403
+            elif user.status == UserStatus.PENDING:
+                return jsonify({
+                    'error': upload_message,
+                    'status': 'pending',
+                    'message': 'Votre compte est en attente d\'approbation administrateur.',
+                    'user_info': user.to_dict()
+                }), 403
+            else:
+                return jsonify({
+                    'error': upload_message,
+                    'user_info': user.to_dict()
+                }), 403
         
         if 'file' not in request.files:
             return jsonify({'error': 'No file provided'}), 400
@@ -469,7 +491,9 @@ def upload_file():
             voxel_spacing=f"{info['zooms'][0]:.2f}x{info['zooms'][1]:.2f}x{info['zooms'][2]:.2f}"
         )
         db.session.add(uploaded_file)
-        db.session.commit()
+        
+        # Increment upload count for trial users
+        user.increment_upload_count()
         
         # Store the data with caching
         data_hash = hash(data.tobytes())
@@ -484,24 +508,56 @@ def upload_file():
             processing_cache[data_hash] = {'data': data}
         
         # Log activity
-        log_activity(user_id, 'FILE_UPLOAD', f'Uploaded {file_type} file: {original_filename}', request.remote_addr)
+        upload_count_info = f"Upload #{user.trial_uploads_count}" if user.status == UserStatus.TRIAL else "Unlimited"
+        log_activity(user_id, 'FILE_UPLOAD', f'Uploaded {file_type} file: {original_filename} ({upload_count_info})', request.remote_addr)
         
         # Clean up original file (keep processed data in memory)
         os.remove(filepath)
         
-        # Prepare response with trial info
+        # Prepare response with updated trial info
         response_data = {
             'success': True,
             'message': f'{file_type.capitalize()} file uploaded successfully',
-            'file_info': info
+            'file_info': info,
+            'upload_message': upload_message
         }
         
-        # Add trial info for doctors
-        if user.role == UserRole.DOCTOR:
-            response_data['days_remaining'] = user.days_remaining()
-            response_data['trial_active'] = user.is_trial_active()
+        # Add detailed trial information
+        trial_status = user.get_trial_status()
+        response_data['trial_status'] = trial_status
         
-        print(f"✅ Upload successful for {user.email}")
+        # Add specific warnings/messages based on status
+        if user.status == UserStatus.TRIAL:
+            uploads_remaining = user.uploads_remaining()
+            days_remaining = user.days_remaining()
+            
+            if uploads_remaining == 0:
+                response_data['trial_warning'] = {
+                    'level': 'critical',
+                    'message': 'C\'est votre dernier téléchargement gratuit! Demandez l\'approbation pour continuer.',
+                    'action_required': True
+                }
+            elif uploads_remaining == 1:
+                response_data['trial_warning'] = {
+                    'level': 'warning',
+                    'message': f'Il vous reste {uploads_remaining} téléchargement et {days_remaining} jours d\'essai.',
+                    'action_required': False
+                }
+            elif days_remaining <= 1:
+                response_data['trial_warning'] = {
+                    'level': 'warning',
+                    'message': f'Votre période d\'essai expire dans {days_remaining} jour(s)!',
+                    'action_required': False
+                }
+            
+        elif user.status == UserStatus.PENDING:
+            # User has been moved to pending after this upload
+            response_data['status_change'] = {
+                'message': 'Vous avez atteint la limite d\'essai. Votre compte est maintenant en attente d\'approbation.',
+                'new_status': 'pending'
+            }
+        
+        print(f"✅ Upload successful for {user.email} - Status: {user.status.value}")
         
         return jsonify(response_data), 200
         

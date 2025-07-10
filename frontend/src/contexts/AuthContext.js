@@ -121,10 +121,24 @@ export const AuthProvider = ({ children }) => {
     console.log('🚪 Logging out user');
     setUser(null);
     setToken(null);
+    
+    // Clear ALL localStorage data related to auth
     localStorage.removeItem('token');
     localStorage.removeItem('user');
-    // Force redirect to login
-    window.location.href = '/login';
+    localStorage.removeItem('authToken');
+    localStorage.removeItem('userRole');
+    localStorage.removeItem('userStatus');
+    
+    // Clear sessionStorage as well
+    sessionStorage.clear();
+    
+    // Clear any cookies related to auth
+    document.cookie.split(";").forEach(function(c) { 
+      document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/"); 
+    });
+    
+    // Force redirect to login with cache busting
+    window.location.href = '/login?t=' + Date.now();
   };
 
   const updateUser = (updatedUserData) => {

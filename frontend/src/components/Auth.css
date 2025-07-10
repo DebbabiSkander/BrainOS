@@ -576,3 +576,298 @@
     max-width: 100%;
   }
 }
+/* Updated Status Pages Styles for new trial system */
+
+/* Trial Banner for active trial users */
+.trial-banner {
+  background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%);
+  color: white;
+  padding: 12px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 2px 10px rgba(243, 156, 18, 0.3);
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+}
+
+.trial-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.trial-icon {
+  font-size: 20px;
+}
+
+.trial-text {
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.trial-warning {
+  color: #fff;
+  font-weight: bold;
+  animation: pulse 2s infinite;
+}
+
+.request-approval-btn {
+  background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%);
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.request-approval-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 5px 15px rgba(39, 174, 96, 0.3);
+}
+
+/* Status cards */
+.status-card.suspended {
+  border-top: 5px solid #e74c3c;
+}
+
+.status-card.suspended .status-icon {
+  color: #e74c3c;
+}
+
+/* Trial summary section */
+.trial-summary {
+  background: rgba(52, 152, 219, 0.1);
+  border: 1px solid rgba(52, 152, 219, 0.2);
+  border-radius: 8px;
+  padding: 20px;
+  margin: 20px 0;
+}
+
+.trial-summary h4 {
+  color: #2c3e50;
+  margin-bottom: 15px;
+  font-size: 16px;
+}
+
+.steps-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.step {
+  padding: 10px 15px;
+  border-radius: 6px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+}
+
+.step.completed {
+  background: rgba(39, 174, 96, 0.1);
+  color: #27ae60;
+  border: 1px solid rgba(39, 174, 96, 0.2);
+}
+
+.step.current {
+  background: rgba(243, 156, 18, 0.1);
+  color: #f39c12;
+  border: 1px solid rgba(243, 156, 18, 0.2);
+  animation: pulse 2s infinite;
+}
+
+.step.pending {
+  background: rgba(149, 165, 166, 0.1);
+  color: #95a5a6;
+  border: 1px solid rgba(149, 165, 166, 0.2);
+}
+
+/* Resolution options for suspended accounts */
+.resolution-options {
+  margin: 20px 0;
+}
+
+.resolution-options h4 {
+  color: #2c3e50;
+  margin-bottom: 15px;
+  font-size: 16px;
+}
+
+.options-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 15px;
+  margin-top: 15px;
+}
+
+.option-card {
+  background: rgba(52, 152, 219, 0.05);
+  border: 1px solid rgba(52, 152, 219, 0.1);
+  border-radius: 8px;
+  padding: 20px;
+  text-align: center;
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+.option-card:hover {
+  background: rgba(52, 152, 219, 0.1);
+  border-color: rgba(52, 152, 219, 0.2);
+  transform: translateY(-2px);
+  box-shadow: 0 5px 15px rgba(52, 152, 219, 0.1);
+}
+
+.option-icon {
+  font-size: 32px;
+  margin-bottom: 10px;
+}
+
+.option-card h5 {
+  color: #2c3e50;
+  margin: 10px 0 5px 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.option-card p {
+  color: #7f8c8d;
+  font-size: 12px;
+  margin: 0;
+  line-height: 1.4;
+}
+
+/* Enhanced status actions */
+.status-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 30px;
+}
+
+.contact-button.primary {
+  background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%);
+  order: -1; /* Show primary action first */
+}
+
+/* Updated responsive design */
+@media (max-width: 768px) {
+  .trial-banner {
+    flex-direction: column;
+    gap: 10px;
+    text-align: center;
+    padding: 15px;
+  }
+  
+  .trial-info {
+    flex-direction: column;
+    gap: 8px;
+  }
+  
+  .options-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .steps-list {
+    gap: 8px;
+  }
+  
+  .step {
+    padding: 8px 12px;
+    font-size: 14px;
+  }
+}
+
+@media (max-width: 480px) {
+  .trial-text {
+    font-size: 13px;
+  }
+  
+  .request-approval-btn {
+    padding: 6px 12px;
+    font-size: 13px;
+  }
+  
+  .option-card {
+    padding: 15px;
+  }
+  
+  .option-icon {
+    font-size: 24px;
+  }
+  
+  .status-actions {
+    gap: 10px;
+  }
+}
+
+/* Pulse animation for warnings */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scale(1.02);
+  }
+}
+
+/* Loading states */
+.trial-banner.loading {
+  background: linear-gradient(135deg, #95a5a6 0%, #7f8c8d 100%);
+  pointer-events: none;
+}
+
+.trial-banner.loading .trial-text {
+  opacity: 0.7;
+}
+
+/* Success states for approval requests */
+.approval-success {
+  background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%);
+  color: white;
+  padding: 15px 20px;
+  border-radius: 8px;
+  margin: 20px 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  animation: slideIn 0.5s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.approval-success .success-icon {
+  font-size: 20px;
+}
+
+/* Error states */
+.approval-error {
+  background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+  color: white;
+  padding: 15px 20px;
+  border-radius: 8px;
+  margin: 20px 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  animation: shake 0.5s ease-in-out;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  75% { transform: translateX(5px); }
+}

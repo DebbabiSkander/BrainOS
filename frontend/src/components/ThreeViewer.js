@@ -508,22 +508,7 @@ const ThreeViewer = ({ appState, onParameterUpdate }) => {
           <div>🎯 Wheel: Zoom</div>
         </div>
         
-        <button
-          onClick={() => onParameterUpdate && onParameterUpdate('takeScreenshot', Date.now())}
-          style={{
-            background: '#27ae60',
-            color: 'white',
-            border: 'none',
-            padding: '6px 12px',
-            borderRadius: '4px',
-            fontSize: '12px',
-            cursor: 'pointer',
-            width: '100%',
-            marginBottom: '5px'
-          }}
-        >
-          📸 Screenshot
-        </button>
+        
       </div>
 
       {/* Loading indicator */}

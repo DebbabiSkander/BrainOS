@@ -1,4 +1,4 @@
-# database.py - Database models and setup for BrainOS (FIXED VERSION)
+# database.py - Updated Database models for new trial system
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timedelta
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -7,10 +7,11 @@ import enum
 db = SQLAlchemy()
 
 class UserStatus(enum.Enum):
-    PENDING = "pending"
-    APPROVED = "approved"
-    REJECTED = "rejected"
-    EXPIRED = "expired"
+    TRIAL = "trial"           # New: User in trial period (7 days, 2 uploads max)
+    PENDING = "pending"       # User awaiting admin approval after trial
+    APPROVED = "approved"     # Admin approved - unlimited access
+    REJECTED = "rejected"     # Admin rejected
+    SUSPENDED = "suspended"   # Trial expired or exceeded limits
 
 class UserRole(enum.Enum):
     ADMIN = "admin"
@@ -26,19 +27,24 @@ class User(db.Model):
     # Personal Information
     nom = db.Column(db.String(100), nullable=False)
     prenom = db.Column(db.String(100), nullable=False)
-    titre = db.Column(db.String(50), nullable=False)  # Dr., Prof., etc.
+    titre = db.Column(db.String(50), nullable=False)
     specialite = db.Column(db.String(100), nullable=False)
     telephone = db.Column(db.String(20), nullable=False)
-    affiliation = db.Column(db.String(200), nullable=False)  # Hospital/Clinic
+    affiliation = db.Column(db.String(200), nullable=False)
     
     # Account Status
     role = db.Column(db.Enum(UserRole), default=UserRole.DOCTOR, nullable=False)
-    status = db.Column(db.Enum(UserStatus), default=UserStatus.PENDING, nullable=False)
+    status = db.Column(db.Enum(UserStatus), default=UserStatus.TRIAL, nullable=False)
+    
+    # Trial Management
+    trial_uploads_count = db.Column(db.Integer, default=0, nullable=False)
+    trial_max_uploads = db.Column(db.Integer, default=2, nullable=False)
     
     # Timestamps
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
-    approved_at = db.Column(db.DateTime)
+    trial_starts_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     trial_ends_at = db.Column(db.DateTime)
+    approved_at = db.Column(db.DateTime)
     last_login = db.Column(db.DateTime)
     
     # Admin who approved
@@ -48,6 +54,12 @@ class User(db.Model):
     activity_logs = db.relationship('ActivityLog', backref='user', lazy='dynamic')
     uploaded_files = db.relationship('UploadedFile', backref='user', lazy='dynamic')
     
+    def __init__(self, **kwargs):
+        super(User, self).__init__(**kwargs)
+        # Set trial period when user is created
+        if not self.trial_ends_at:
+            self.trial_ends_at = datetime.utcnow() + timedelta(days=7)
+    
     def set_password(self, password):
         """Hash and set password"""
         self.password_hash = generate_password_hash(password)
@@ -56,16 +68,55 @@ class User(db.Model):
         """Check if password matches"""
         return check_password_hash(self.password_hash, password)
     
+    def can_upload(self):
+        """Check if user can upload files"""
+        if self.role == UserRole.ADMIN:
+            return True, "Admin access"
+        
+        if self.status == UserStatus.APPROVED:
+            return True, "Approved user"
+        
+        if self.status == UserStatus.TRIAL:
+            # Check if trial is still active
+            if not self.is_trial_active():
+                self.status = UserStatus.SUSPENDED
+                db.session.commit()
+                return False, "Trial period expired"
+            
+            # Check upload limit
+            if self.trial_uploads_count >= self.trial_max_uploads:
+                self.status = UserStatus.SUSPENDED
+                db.session.commit()
+                return False, f"Trial upload limit reached ({self.trial_max_uploads} uploads maximum)"
+            
+            return True, f"Trial access ({self.trial_uploads_count}/{self.trial_max_uploads} uploads used)"
+        
+        return False, f"Account status: {self.status.value}"
+    
+    def increment_upload_count(self):
+        """Increment upload counter for trial users"""
+        if self.status == UserStatus.TRIAL:
+            self.trial_uploads_count += 1
+            
+            # Check if user has reached limit
+            if self.trial_uploads_count >= self.trial_max_uploads:
+                self.status = UserStatus.PENDING  # Move to pending for admin approval
+            
+            db.session.commit()
+    
     def approve(self, admin_id):
-        """Approve user and set trial period"""
+        """Approve user for unlimited access"""
         self.status = UserStatus.APPROVED
         self.approved_at = datetime.utcnow()
         self.approved_by = admin_id
-        self.trial_ends_at = datetime.utcnow() + timedelta(days=7)
+    
+    def reject(self):
+        """Reject user account"""
+        self.status = UserStatus.REJECTED
     
     def is_trial_active(self):
         """Check if trial period is still active"""
-        if self.status != UserStatus.APPROVED:
+        if self.status not in [UserStatus.TRIAL, UserStatus.PENDING]:
             return False
         if not self.trial_ends_at:
             return False
@@ -78,8 +129,48 @@ class User(db.Model):
         delta = self.trial_ends_at - datetime.utcnow()
         return max(0, delta.days)
     
+    def uploads_remaining(self):
+        """Get uploads remaining in trial"""
+        if self.status == UserStatus.APPROVED or self.role == UserRole.ADMIN:
+            return -1  # Use -1 instead of Infinity for JSON compatibility
+        if self.status == UserStatus.TRIAL:
+            return max(0, self.trial_max_uploads - self.trial_uploads_count)
+        return 0
+    
+    def get_trial_status(self):
+        """Get detailed trial status"""
+        return {
+            'status': self.status.value,
+            'days_remaining': self.days_remaining(),
+            'uploads_used': self.trial_uploads_count,
+            'uploads_remaining': self.uploads_remaining(),
+            'trial_active': self.is_trial_active(),
+            'can_upload': self.can_upload()[0],
+            'upload_message': self.can_upload()[1]
+        }
+    
     def to_dict(self, include_sensitive=False):
-        """Convert user to dictionary"""
+        """Convert user to dictionary - JSON safe version"""
+        # Get trial status safely
+        try:
+            trial_status = self.get_trial_status()
+        except:
+            trial_status = {
+                'days_remaining': 0,
+                'trial_active': False,
+                'can_upload': False,
+                'upload_message': 'Status unavailable'
+            }
+        
+        # Convert uploads_remaining to JSON-safe value
+        uploads_remaining = self.uploads_remaining()
+        if uploads_remaining == -1:  # Unlimited access
+            uploads_remaining_display = "unlimited"
+            uploads_remaining_count = -1
+        else:
+            uploads_remaining_display = str(uploads_remaining)
+            uploads_remaining_count = uploads_remaining
+        
         data = {
             'id': self.id,
             'email': self.email,
@@ -94,8 +185,16 @@ class User(db.Model):
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'approved_at': self.approved_at.isoformat() if self.approved_at else None,
             'trial_ends_at': self.trial_ends_at.isoformat() if self.trial_ends_at else None,
-            'days_remaining': self.days_remaining() if self.is_trial_active() else 0,
-            'is_trial_active': self.is_trial_active()
+            
+            # Trial information - JSON safe
+            'trial_uploads_count': getattr(self, 'trial_uploads_count', 0),
+            'trial_max_uploads': getattr(self, 'trial_max_uploads', 2),
+            'days_remaining': trial_status['days_remaining'],
+            'uploads_remaining': uploads_remaining_count,  # Numeric value (-1 for unlimited)
+            'uploads_remaining_display': uploads_remaining_display,  # "unlimited" or number
+            'is_trial_active': trial_status['trial_active'],
+            'can_upload': trial_status['can_upload'],
+            'upload_message': trial_status['upload_message']
         }
         
         if include_sensitive:
@@ -120,13 +219,13 @@ class UploadedFile(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     filename = db.Column(db.String(255), nullable=False)
     original_filename = db.Column(db.String(255), nullable=False)
-    file_type = db.Column(db.String(50), nullable=False)  # brain/lesion
-    file_size = db.Column(db.Integer)  # in bytes
+    file_type = db.Column(db.String(50), nullable=False)
+    file_size = db.Column(db.Integer)
     upload_date = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     
     # Analysis metadata
-    shape = db.Column(db.String(50))  # e.g., "512x512x30"
-    voxel_spacing = db.Column(db.String(50))  # e.g., "0.5x0.5x1.0"
+    shape = db.Column(db.String(50))
+    voxel_spacing = db.Column(db.String(50))
     
     def to_dict(self):
         return {
@@ -148,10 +247,10 @@ def init_db(app):
         # Create tables
         db.create_all()
         
-        # Check if admin user already exists BEFORE trying to create it
+        # Check if admin user already exists
         admin = User.query.filter_by(email='admin@brainos.com').first()
         if not admin:
-            # Create default admin user only if it doesn't exist
+            # Create default admin user
             admin = User(
                 email='admin@brainos.com',
                 nom='Admin',
@@ -172,7 +271,7 @@ def init_db(app):
                 print("✅ Default admin user created: admin@brainos.com / admin123")
             except Exception as e:
                 db.session.rollback()
-                print(f"⚠️ Admin user creation failed (may already exist): {e}")
+                print(f"⚠️ Admin user creation failed: {e}")
         else:
             print("✅ Admin user already exists: admin@brainos.com")
             

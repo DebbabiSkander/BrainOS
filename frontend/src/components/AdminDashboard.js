@@ -1,4 +1,4 @@
-// components/AdminDashboard.js - Admin Panel for User Management (FIXED VERSION)
+// components/AdminDashboard.js - Updated for new trial system
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -10,7 +10,7 @@ const AdminDashboard = () => {
   const navigate = useNavigate();
   const { user, logout, authenticatedFetch, isAdmin } = useAuth();
   
-  const [activeTab, setActiveTab] = useState('pending');
+  const [activeTab, setActiveTab] = useState('trial'); // Start with trial users
   const [users, setUsers] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -25,7 +25,7 @@ const AdminDashboard = () => {
     
     console.log('✅ Admin user detected, loading dashboard');
     fetchStats();
-    fetchUsers('pending');
+    fetchUsers('trial'); // Start with trial users
   }, [user, navigate, isAdmin]);
 
   const fetchStats = async () => {
@@ -79,8 +79,10 @@ const AdminDashboard = () => {
     console.log(`📂 Switching to tab: ${tab}`);
     setActiveTab(tab);
     const statusMap = {
+      'trial': 'trial',
       'pending': 'pending',
       'approved': 'approved',
+      'suspended': 'suspended',
       'all': ''
     };
     fetchUsers(statusMap[tab]);
@@ -149,15 +151,46 @@ const AdminDashboard = () => {
 
   const getStatusBadge = (status) => {
     const badges = {
+      'trial': { class: 'status-trial', text: 'Essai', icon: '🔥' },
       'pending': { class: 'status-pending', text: 'En attente', icon: '⏳' },
       'approved': { class: 'status-approved', text: 'Approuvé', icon: '✅' },
-      'rejected': { class: 'status-rejected', text: 'Rejeté', icon: '❌' }
+      'rejected': { class: 'status-rejected', text: 'Rejeté', icon: '❌' },
+      'suspended': { class: 'status-suspended', text: 'Suspendu', icon: '🚫' }
     };
-    const badge = badges[status] || badges['pending'];
+    const badge = badges[status] || badges['trial'];
     return (
       <span className={`status-badge ${badge.class}`}>
         {badge.icon} {badge.text}
       </span>
+    );
+  };
+
+  const getTrialProgress = (user) => {
+    if (user.status !== 'trial') return null;
+    
+    const uploadsUsed = user.trial_uploads_count || 0;
+    const uploadsMax = user.trial_max_uploads || 2;
+    const daysRemaining = user.days_remaining || 0;
+    
+    return (
+      <div className="trial-progress">
+        <div className="progress-item">
+          <span className="progress-label">Téléchargements:</span>
+          <div className="progress-bar">
+            <div 
+              className="progress-fill" 
+              style={{ width: `${(uploadsUsed / uploadsMax) * 100}%` }}
+            ></div>
+          </div>
+          <span className="progress-text">{uploadsUsed}/{uploadsMax}</span>
+        </div>
+        <div className="progress-item">
+          <span className="progress-label">Jours restants:</span>
+          <span className={`days-remaining ${daysRemaining <= 1 ? 'critical' : daysRemaining <= 3 ? 'warning' : ''}`}>
+            {daysRemaining}
+          </span>
+        </div>
+      </div>
     );
   };
 
@@ -200,6 +233,13 @@ const AdminDashboard = () => {
               <p>Total Médecins</p>
             </div>
           </div>
+          <div className="stat-card trial">
+            <div className="stat-icon">🔥</div>
+            <div className="stat-content">
+              <h3>{stats.trial_users}</h3>
+              <p>En Essai</p>
+            </div>
+          </div>
           <div className="stat-card pending">
             <div className="stat-icon">⏳</div>
             <div className="stat-content">
@@ -214,11 +254,11 @@ const AdminDashboard = () => {
               <p>Approuvés</p>
             </div>
           </div>
-          <div className="stat-card active">
-            <div className="stat-icon">🔥</div>
+          <div className="stat-card suspended">
+            <div className="stat-icon">🚫</div>
             <div className="stat-content">
-              <h3>{stats.active_trials}</h3>
-              <p>Essais Actifs</p>
+              <h3>{stats.suspended_users}</h3>
+              <p>Suspendus</p>
             </div>
           </div>
         </div>
@@ -226,6 +266,12 @@ const AdminDashboard = () => {
 
       <div className="admin-content">
         <div className="tab-navigation">
+          <button
+            className={`tab-button ${activeTab === 'trial' ? 'active' : ''}`}
+            onClick={() => handleTabChange('trial')}
+          >
+            🔥 Essais Actifs ({stats?.trial_users || 0})
+          </button>
           <button
             className={`tab-button ${activeTab === 'pending' ? 'active' : ''}`}
             onClick={() => handleTabChange('pending')}
@@ -239,10 +285,16 @@ const AdminDashboard = () => {
             ✅ Approuvés ({stats?.approved_users || 0})
           </button>
           <button
+            className={`tab-button ${activeTab === 'suspended' ? 'active' : ''}`}
+            onClick={() => handleTabChange('suspended')}
+          >
+            🚫 Suspendus ({stats?.suspended_users || 0})
+          </button>
+          <button
             className={`tab-button ${activeTab === 'all' ? 'active' : ''}`}
             onClick={() => handleTabChange('all')}
           >
-            📋 Tous les utilisateurs
+            📋 Tous
           </button>
         </div>
 
@@ -273,9 +325,8 @@ const AdminDashboard = () => {
                     <tr>
                       <th>Médecin</th>
                       <th>Spécialité</th>
-                      <th>Affiliation</th>
-                      <th>Contact</th>
                       <th>Statut</th>
+                      <th>Progression Essai</th>
                       <th>Date d'inscription</th>
                       <th>Actions</th>
                     </tr>
@@ -292,40 +343,50 @@ const AdminDashboard = () => {
                               <strong>{userItem.titre} {userItem.prenom} {userItem.nom}</strong>
                               <br />
                               <small>{userItem.email}</small>
+                              <br />
+                              <small>{userItem.affiliation}</small>
                             </div>
                           </div>
                         </td>
                         <td>
                           <span className="specialty-badge">{userItem.specialite}</span>
                         </td>
-                        <td>{userItem.affiliation}</td>
-                        <td>{userItem.telephone}</td>
                         <td>{getStatusBadge(userItem.status)}</td>
+                        <td>{getTrialProgress(userItem)}</td>
                         <td>{formatDate(userItem.created_at)}</td>
                         <td>
                           <div className="action-buttons">
-                            {userItem.status === 'pending' && (
+                            {(userItem.status === 'pending' || userItem.status === 'trial' || userItem.status === 'suspended') && (
                               <>
                                 <button
                                   onClick={() => approveUser(userItem.id)}
                                   className="approve-button"
-                                  title="Approuver"
+                                  title="Approuver pour accès illimité"
                                 >
-                                  ✅
+                                  ✅ Approuver
                                 </button>
                                 <button
                                   onClick={() => rejectUser(userItem.id)}
                                   className="reject-button"
                                   title="Rejeter"
                                 >
-                                  ❌
+                                  ❌ Rejeter
                                 </button>
                               </>
                             )}
-                            {userItem.status === 'approved' && userItem.is_trial_active && (
-                              <span className="trial-info">
-                                🔥 {userItem.days_remaining} jours restants
+                            {userItem.status === 'approved' && (
+                              <span className="approved-info">
+                                ✅ Accès illimité
                               </span>
+                            )}
+                            {userItem.status === 'trial' && (
+                              <div className="trial-info">
+                                <small>
+                                  {userItem.uploads_remaining} téléchargements restants
+                                  <br />
+                                  {userItem.days_remaining} jours restants
+                                </small>
+                              </div>
                             )}
                           </div>
                         </td>
