@@ -2,7 +2,7 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
 from datetime import datetime, timedelta
-from database import db, User, UserStatus, UserRole, ActivityLog
+from database import db, User, UserStatus, UserRole, ActivityLog, UploadedFile
 import re
 
 auth_bp = Blueprint('auth', __name__)
@@ -528,6 +528,64 @@ def get_admin_stats():
         
     except Exception as e:
         print(f"❌ Admin stats error: {str(e)}")
+        return jsonify({'error': f'Erreur: {str(e)}'}), 500
+
+@auth_bp.route('/admin/users/<int:user_id>/delete', methods=['DELETE'])
+@jwt_required()
+def delete_user(user_id):
+    """Delete user account (admin only)"""
+    try:
+        admin_id_str = get_jwt_identity()
+        admin_id = int(admin_id_str)
+        admin = User.query.get(admin_id)
+        
+        if not admin or admin.role != UserRole.ADMIN:
+            return jsonify({'error': 'Accès non autorisé'}), 403
+        
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({'error': 'Utilisateur non trouvé'}), 404
+        
+        # Don't allow admin to delete themselves
+        if user.id == admin.id:
+            return jsonify({'error': 'Vous ne pouvez pas supprimer votre propre compte'}), 400
+        
+        # Don't allow deleting other admins
+        if user.role == UserRole.ADMIN:
+            return jsonify({'error': 'Impossible de supprimer un autre administrateur'}), 400
+        
+        user_email = user.email  # Store for logging
+        
+        # Delete related records first (cascade delete)
+        try:
+            # Delete activity logs
+            ActivityLog.query.filter_by(user_id=user_id).delete()
+            
+            # Delete uploaded files records
+            UploadedFile.query.filter_by(user_id=user_id).delete()
+            
+            # Delete the user
+            db.session.delete(user)
+            db.session.commit()
+            
+            # Log activity
+            log_activity(admin_id, 'USER_DELETED', f'Deleted user {user_email}', request.remote_addr)
+            
+            print(f"🗑️ User {user_email} deleted by admin {admin.email}")
+            
+            return jsonify({
+                'success': True,
+                'message': f'Utilisateur {user_email} supprimé avec succès'
+            }), 200
+            
+        except Exception as e:
+            db.session.rollback()
+            print(f"❌ Error deleting user records: {str(e)}")
+            return jsonify({'error': 'Erreur lors de la suppression des données utilisateur'}), 500
+        
+    except Exception as e:
+        print(f"❌ User deletion error: {str(e)}")
+        db.session.rollback()
         return jsonify({'error': f'Erreur: {str(e)}'}), 500
 
 # Health check for auth system

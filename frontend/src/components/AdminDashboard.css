@@ -450,7 +450,7 @@
   align-items: flex-start;
 }
 
-.approve-button, .reject-button {
+.approve-button, .reject-button, .delete-button {
   padding: 6px 12px;
   border: none;
   border-radius: 4px;
@@ -459,6 +459,7 @@
   font-weight: 600;
   transition: all 0.3s ease;
   white-space: nowrap;
+  margin: 2px 0;
 }
 
 .approve-button {
@@ -469,6 +470,19 @@
 .reject-button {
   background: linear-gradient(135deg, #e74c3c 0%, #ec7063 100%);
   color: white;
+}
+
+.delete-button {
+  background: linear-gradient(135deg, #8e44ad 0%, #9b59b6 100%);
+  color: white;
+  border: 2px solid #8e44ad;
+}
+
+.delete-button:hover {
+  background: linear-gradient(135deg, #6a1b9a 0%, #8e44ad 100%);
+  border-color: #6a1b9a;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(142, 68, 173, 0.4);
 }
 
 .approve-button:hover, .reject-button:hover {
@@ -635,7 +649,134 @@
   100% { transform: rotate(360deg); }
 }
 
-/* Responsive Design */
+/* Modern Delete Modal */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  backdrop-filter: blur(4px);
+}
+
+.delete-modal {
+  background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+  border-radius: 16px;
+  padding: 0;
+  min-width: 400px;
+  max-width: 500px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  animation: modalSlideIn 0.3s ease-out;
+}
+
+@keyframes modalSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-30px) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.modal-header {
+  padding: 24px 24px 16px;
+  text-align: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.modal-icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+  animation: pulse 2s infinite;
+}
+
+.modal-header h3 {
+  color: white;
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.modal-body {
+  padding: 20px 24px;
+  text-align: center;
+}
+
+.modal-body p {
+  color: rgba(255, 255, 255, 0.9);
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.modal-body strong {
+  color: #e74c3c;
+  font-weight: 600;
+}
+
+.modal-actions {
+  padding: 16px 24px 24px;
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.modal-button {
+  padding: 12px 24px;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  min-width: 100px;
+}
+
+.modal-button.cancel {
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.modal-button.cancel:hover {
+  background: rgba(255, 255, 255, 0.2);
+  transform: translateY(-1px);
+}
+
+.modal-button.delete {
+  background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+  color: white;
+}
+
+.modal-button.delete:hover {
+  background: linear-gradient(135deg, #c0392b 0%, #a93226 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(231, 76, 60, 0.4);
+}
+
+/* Responsive modal */
+@media (max-width: 480px) {
+  .delete-modal {
+    min-width: 90%;
+    margin: 20px;
+  }
+  
+  .modal-actions {
+    flex-direction: column;
+  }
+  
+  .modal-button {
+    width: 100%;
+  }
+}
 @media (max-width: 768px) {
   .admin-dashboard {
     font-size: 14px;

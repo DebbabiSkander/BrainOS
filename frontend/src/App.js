@@ -1,4 +1,4 @@
-// src/App.js - Fixed Authentication Flow
+// src/App.js - Updated with Mesh Normalization Support
 import React, { useState, useEffect, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import './App.css';
@@ -24,7 +24,7 @@ const API_BASE_URL = 'http://localhost:5000/api';
 
 // Main BrainOS Dashboard Component
 const BrainOSDashboard = () => {
-  const { user, logout, authenticatedFetch } = useAuth(); // Use authenticatedFetch from context
+  const { user, logout, authenticatedFetch } = useAuth();
   
   // Initialize application state
   const [appState, setAppState] = useState({
@@ -68,15 +68,22 @@ const BrainOSDashboard = () => {
     meshThreshold: 0.1,
     regenerateMesh: 0,
     
-    // Normalization state
+    // Normalization state (intensity - deprecated)
     normalizationApplied: false,
     normalizationMethod: null,
+    
+    // NEW: Mesh Normalization state
+    meshNormalizationApplied: false,
+    meshNormalizationMethod: null,
+    meshNormalizationParams: null,
+    meshNormalizationStats: null,
     
     // Action triggers
     takeScreenshot: 0,
     exportData: 0,
     clearMeasurements: 0,
     clearCache: 0,
+    clearMeshNormalization: 0,
     
     // Performance
     performanceStats: null,
@@ -95,14 +102,19 @@ const BrainOSDashboard = () => {
     }));
   };
 
-  // Handle file upload with authentication - FIXED VERSION
+  // Handle file upload with authentication
   const handleFileUpload = async (file, fileType) => {
     try {
       setAppState(prevState => ({
         ...prevState,
         isLoading: true,
         statusMessage: `Uploading ${fileType} file...`,
-        errorMessage: null
+        errorMessage: null,
+        // Reset mesh normalization when new file is loaded
+        meshNormalizationApplied: false,
+        meshNormalizationMethod: null,
+        meshNormalizationParams: null,
+        meshNormalizationStats: null
       }));
 
       console.log('🔄 Starting file upload:', file.name, 'Type:', fileType);
@@ -115,8 +127,7 @@ const BrainOSDashboard = () => {
       // Use authenticatedFetch for proper CORS and auth headers
       const response = await authenticatedFetch(`${API_BASE_URL}/upload`, {
         method: 'POST',
-        body: formData, // Don't set Content-Type header for FormData
-        // Remove Content-Type header to let browser set it automatically for FormData
+        body: formData,
       });
 
       const data = await response.json();
@@ -133,14 +144,19 @@ const BrainOSDashboard = () => {
           statusMessage: `${fileType.charAt(0).toUpperCase() + fileType.slice(1)} file loaded successfully`,
           errorMessage: null,
           normalizationApplied: false,
-          normalizationMethod: null
+          normalizationMethod: null,
+          // Keep mesh normalization reset
+          meshNormalizationApplied: false,
+          meshNormalizationMethod: null,
+          meshNormalizationParams: null,
+          meshNormalizationStats: null
         }));
 
-        // Show trial reminder if days remaining are low
-        if (data.days_remaining !== undefined && data.days_remaining <= 2) {
+        // Show trial reminder if applicable
+        if (data.trial_status && data.trial_status.days_remaining <= 2) {
           setAppState(prevState => ({
             ...prevState,
-            statusMessage: `${prevState.statusMessage} - ⚠️ ${data.days_remaining} jours restants dans votre essai`
+            statusMessage: `${prevState.statusMessage} - ⚠️ ${data.trial_status.days_remaining} jours restants dans votre essai`
           }));
         }
       } else {
@@ -157,16 +173,48 @@ const BrainOSDashboard = () => {
     }
   };
 
-  // Handle normalization complete
+  // Handle mesh normalization complete - NEW FUNCTION
+  const handleMeshNormalizationComplete = useCallback((normalizationInfo) => {
+    console.log('🔧 Mesh normalization completed:', normalizationInfo);
+    
+    setAppState(prevState => ({
+      ...prevState,
+      meshNormalizationApplied: true,
+      meshNormalizationMethod: normalizationInfo.method,
+      meshNormalizationParams: normalizationInfo.params,
+      meshNormalizationStats: normalizationInfo.stats,
+      statusMessage: `Mesh normalization applied: ${normalizationInfo.method === 'cartesian' ? 'Cartésienne' : 'Sphérique'}`,
+      regenerateMesh: Date.now() // Trigger mesh regeneration
+    }));
+  }, []);
+
+  // Handle intensity normalization complete (deprecated but kept for compatibility)
   const handleNormalizationComplete = useCallback((normalizationInfo) => {
     setAppState(prevState => ({
       ...prevState,
       normalizationApplied: true,
       normalizationMethod: normalizationInfo.method,
-      statusMessage: `Normalization applied: ${normalizationInfo.method}`,
+      statusMessage: `Intensity normalization applied: ${normalizationInfo.method}`,
       regenerateMesh: Date.now()
     }));
   }, []);
+
+  // Clear mesh normalization - NEW FUNCTION
+  useEffect(() => {
+    if (appState.clearMeshNormalization > 0) {
+      console.log('🗑️ Clearing mesh normalization...');
+      
+      setAppState(prevState => ({
+        ...prevState,
+        meshNormalizationApplied: false,
+        meshNormalizationMethod: null,
+        meshNormalizationParams: null,
+        meshNormalizationStats: null,
+        statusMessage: 'Mesh normalization cleared - using original mesh',
+        regenerateMesh: Date.now()
+      }));
+    }
+  }, [appState.clearMeshNormalization]);
 
   // Clear cache
   useEffect(() => {
@@ -245,15 +293,22 @@ const BrainOSDashboard = () => {
       meshThreshold: 0.1,
       regenerateMesh: 0,
       
-      // Normalization
+      // Normalization (intensity - deprecated)
       normalizationApplied: false,
       normalizationMethod: null,
+      
+      // Mesh normalization
+      meshNormalizationApplied: false,
+      meshNormalizationMethod: null,
+      meshNormalizationParams: null,
+      meshNormalizationStats: null,
       
       // Action triggers
       takeScreenshot: 0,
       exportData: 0,
       clearMeasurements: 0,
       clearCache: 0,
+      clearMeshNormalization: 0,
       
       // Performance
       performanceStats: null,
@@ -297,12 +352,12 @@ const BrainOSDashboard = () => {
         onClose={() => updateParameter('showAnalysisPanel', false)}
       />
       
-      {/* Normalization Panel */}
+      {/* Normalization Panel - Updated for Mesh Geometry */}
       <NormalizationPanel
         appState={appState}
         isVisible={appState.showNormalizationPanel}
         onClose={() => updateParameter('showNormalizationPanel', false)}
-        onNormalizationComplete={handleNormalizationComplete}
+        onNormalizationComplete={handleMeshNormalizationComplete}
       />
       
       {/* Export Panel */}
@@ -333,6 +388,15 @@ const BrainOSDashboard = () => {
             <div>Cache Memory: {appState.performanceStats.cache_memory_mb.toFixed(2)} MB</div>
             <div>Loaded Files: {appState.performanceStats.loaded_files}</div>
             <div>Max File Size: {appState.performanceStats.max_file_size_mb} MB</div>
+            {appState.meshNormalizationApplied && (
+              <>
+                <hr style={{ margin: '10px 0', border: '1px solid #34495e' }} />
+                <div style={{ color: '#27ae60' }}>
+                  <strong>Mesh Normalization Active:</strong><br/>
+                  Method: {appState.meshNormalizationMethod === 'cartesian' ? 'Cartésienne' : 'Sphérique'}
+                </div>
+              </>
+            )}
           </div>
           <button
             onClick={() => updateParameter('showPerformanceStats', false)}
@@ -379,7 +443,7 @@ const BrainOSDashboard = () => {
   );
 };
 
-// Auth wrapper component - FIXED VERSION
+// Auth wrapper component
 const AuthWrapper = () => {
   const { user, loading, isAuthenticated, isAdmin, login } = useAuth();
 

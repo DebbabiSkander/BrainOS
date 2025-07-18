@@ -1,4 +1,4 @@
-// components/AdminDashboard.js - Updated for new trial system
+// components/AdminDashboard.js - Complete version with delete modal
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -6,15 +6,57 @@ import './AdminDashboard.css';
 
 const API_BASE_URL = 'http://localhost:5000/api';
 
+// Modal component for delete confirmation
+const DeleteConfirmModal = ({ isOpen, onClose, onConfirm, userEmail }) => {
+  if (!isOpen) return null;
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="delete-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <div className="modal-icon">🗑️</div>
+          <h3>Supprimer l'utilisateur</h3>
+        </div>
+        
+        <div className="modal-body">
+          <p>Êtes-vous sûr de vouloir supprimer <strong>{userEmail}</strong> ?</p>
+        </div>
+        
+        <div className="modal-actions">
+          <button 
+            className="modal-button cancel" 
+            onClick={onClose}
+          >
+            Annuler
+          </button>
+          <button 
+            className="modal-button delete" 
+            onClick={onConfirm}
+          >
+            Supprimer
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const AdminDashboard = () => {
   const navigate = useNavigate();
   const { user, logout, authenticatedFetch, isAdmin } = useAuth();
   
-  const [activeTab, setActiveTab] = useState('trial'); // Start with trial users
+  const [activeTab, setActiveTab] = useState('trial');
   const [users, setUsers] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // State for delete modal
+  const [deleteModal, setDeleteModal] = useState({
+    isOpen: false,
+    userId: null,
+    userEmail: ''
+  });
 
   useEffect(() => {
     if (!user || !isAdmin()) {
@@ -25,7 +67,7 @@ const AdminDashboard = () => {
     
     console.log('✅ Admin user detected, loading dashboard');
     fetchStats();
-    fetchUsers('trial'); // Start with trial users
+    fetchUsers('trial');
   }, [user, navigate, isAdmin]);
 
   const fetchStats = async () => {
@@ -136,6 +178,45 @@ const AdminDashboard = () => {
       console.error('❌ Error rejecting user:', error);
       setError('Erreur lors du rejet');
     }
+  };
+
+  // Delete user - opens modal
+  const deleteUser = async (userId, userEmail) => {
+    setDeleteModal({
+      isOpen: true,
+      userId,
+      userEmail
+    });
+  };
+
+  // Handle delete confirmation
+  const handleDeleteConfirm = async () => {
+    try {
+      console.log(`🗑️ Deleting user: ${deleteModal.userId}`);
+      const response = await authenticatedFetch(
+        `${API_BASE_URL}/auth/admin/users/${deleteModal.userId}/delete`,
+        { method: 'DELETE' }
+      );
+      
+      const data = await response.json();
+      if (data.success) {
+        console.log('✅ User deleted successfully');
+        fetchUsers(activeTab === 'all' ? '' : activeTab);
+        fetchStats();
+        setDeleteModal({ isOpen: false, userId: null, userEmail: '' });
+      } else {
+        console.error('❌ Failed to delete user:', data.error);
+        setError(data.error);
+      }
+    } catch (error) {
+      console.error('❌ Error deleting user:', error);
+      setError('Erreur lors de la suppression de l\'utilisateur');
+    }
+  };
+
+  // Handle delete cancel
+  const handleDeleteCancel = () => {
+    setDeleteModal({ isOpen: false, userId: null, userEmail: '' });
   };
 
   const formatDate = (dateString) => {
@@ -388,6 +469,14 @@ const AdminDashboard = () => {
                                 </small>
                               </div>
                             )}
+                            {/* Delete button for all non-admin users */}
+                            <button
+                              onClick={() => deleteUser(userItem.id, userItem.email)}
+                              className="delete-button"
+                              title="Supprimer définitivement cet utilisateur"
+                            >
+                              🗑️ Supprimer
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -416,6 +505,14 @@ const AdminDashboard = () => {
           </div>
         )}
       </div>
+
+      {/* Delete Confirmation Modal */}
+      <DeleteConfirmModal
+        isOpen={deleteModal.isOpen}
+        onClose={handleDeleteCancel}
+        onConfirm={handleDeleteConfirm}
+        userEmail={deleteModal.userEmail}
+      />
     </div>
   );
 };

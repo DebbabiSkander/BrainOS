@@ -1,8 +1,7 @@
-// components/ThreeViewer.js - Simple 3D Visualization using vanilla Three.js
+// components/ThreeViewer.js - Updated with Lesion Coordinate Support
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import { useAuth } from '../contexts/AuthContext';
-
 
 // API configuration
 const API_BASE_URL = 'http://localhost:5000/api';
@@ -140,6 +139,7 @@ const ThreeViewer = ({ appState, onParameterUpdate }) => {
   
   const [brainMeshData, setBrainMeshData] = useState(null);
   const [lesionMeshData, setLesionMeshData] = useState(null);
+  const [lesionCoordinates, setLesionCoordinates] = useState(null); // NEW: For lesion coordinates
   const [loadingMeshes, setLoadingMeshes] = useState(false);
   const [meshError, setMeshError] = useState(null);
   const [autoRotate, setAutoRotate] = useState(false);
@@ -248,16 +248,7 @@ const ThreeViewer = ({ appState, onParameterUpdate }) => {
     };
   }, [autoRotate]);
 
-  // Get authentication headers
-  const getAuthHeaders = () => {
-    const token = localStorage.getItem('token');
-    return {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json'
-    };
-  };
-
-  // Load mesh data from backend
+  // Load mesh/coordinate data from backend
   const loadMeshData = useCallback(async (fileId, fileType) => {
     try {
       setLoadingMeshes(true);
@@ -265,7 +256,7 @@ const ThreeViewer = ({ appState, onParameterUpdate }) => {
       
       const threshold = fileType === 'brain' ? (appState.meshThreshold || 0.1) : 0.05;
       
-      console.log(`Loading ${fileType} mesh with threshold: ${threshold}`);
+      console.log(`Loading ${fileType} data with threshold: ${threshold}`);
       
       const response = await authenticatedFetch(
         `${API_BASE_URL}/mesh/${fileId}?threshold=${threshold}&smoothing=1.0&use_cache=true`
@@ -274,23 +265,80 @@ const ThreeViewer = ({ appState, onParameterUpdate }) => {
       const data = await response.json();
       
       if (data.success) {
-        if (fileType === 'brain') {
-          setBrainMeshData(data.mesh_data);
+        // Check if this is lesion coordinate data or mesh data
+        if (data.data_type === 'lesion_coordinates') {
+          console.log(`${fileType} coordinates loaded:`, data.lesion_stats);
+          setLesionCoordinates(data.lesion_data);
+          setLesionMeshData(null); // Clear any existing mesh data
         } else {
-          setLesionMeshData(data.mesh_data);
+          // Regular mesh data (brain)
+          if (fileType === 'brain') {
+            setBrainMeshData(data.mesh_data);
+            console.log(`${fileType} mesh loaded:`, data.mesh_stats);
+          } else {
+            setLesionMeshData(data.mesh_data);
+            console.log(`${fileType} mesh loaded:`, data.mesh_stats);
+          }
         }
-        
-        console.log(`${fileType} mesh loaded:`, data.mesh_stats);
       } else {
-        throw new Error(data.error || 'Failed to load mesh');
+        throw new Error(data.error || `Failed to load ${fileType} data`);
       }
     } catch (error) {
-      console.error(`Error loading ${fileType} mesh:`, error);
-      setMeshError(`Failed to load ${fileType} mesh: ${error.message}`);
+      console.error(`Error loading ${fileType} data:`, error);
+      setMeshError(`Failed to load ${fileType} data: ${error.message}`);
     } finally {
       setLoadingMeshes(false);
     }
   }, [appState.meshThreshold, authenticatedFetch]);
+
+  // Create lesion spheres from coordinate data
+  const createLesionSpheres = useCallback((coordinateData, color, opacity) => {
+    if (!coordinateData || !coordinateData.coordinates || coordinateData.coordinates.length === 0) {
+      return null;
+    }
+
+    try {
+      const coordinates = coordinateData.coordinates;
+      console.log(`Creating lesion spheres for ${coordinates.length} lesions`);
+      
+      // Create a group to hold all lesion spheres
+      const lesionGroup = new THREE.Group();
+      
+      // Create sphere geometry (reuse for all lesions)
+      const sphereGeometry = new THREE.SphereGeometry(1.5, 8, 6); // Small sphere, low detail for performance
+      
+      // Create material
+      const sphereMaterial = new THREE.MeshPhongMaterial({
+        color: new THREE.Color(color),
+        opacity: opacity,
+        transparent: opacity < 1.0,
+        shininess: 100,
+        specular: 0x222222
+      });
+      
+      // Limit the number of spheres for performance (take every nth lesion if too many)
+      const maxSpheres = 5000; // Limit for performance
+      const step = Math.max(1, Math.ceil(coordinates.length / maxSpheres));
+      
+      let sphereCount = 0;
+      for (let i = 0; i < coordinates.length; i += step) {
+        const coord = coordinates[i];
+        if (coord && coord.length >= 3) {
+          const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+          sphere.position.set(coord[0], coord[1], coord[2]);
+          lesionGroup.add(sphere);
+          sphereCount++;
+        }
+      }
+      
+      console.log(`Created ${sphereCount} lesion spheres (from ${coordinates.length} coordinates)`);
+      
+      return lesionGroup;
+    } catch (error) {
+      console.error('Error creating lesion spheres:', error);
+      return null;
+    }
+  }, []);
 
   // Create mesh from data
   const createMesh = useCallback((meshData, color, opacity, wireframe = false) => {
@@ -364,33 +412,67 @@ const ThreeViewer = ({ appState, onParameterUpdate }) => {
     }
   }, [brainMeshData, appState.brainColor, appState.brainOpacity, appState.viewMode, showWireframe, createMesh]);
 
-  // Update lesion mesh
+  // Update lesion mesh/spheres
   useEffect(() => {
     if (!sceneRef.current) return;
 
     // Remove existing lesion mesh
     if (lesionMeshRef.current) {
       sceneRef.current.remove(lesionMeshRef.current);
-      lesionMeshRef.current.geometry.dispose();
-      lesionMeshRef.current.material.dispose();
+      
+      // Dispose of geometry and materials
+      if (lesionMeshRef.current.geometry) {
+        lesionMeshRef.current.geometry.dispose();
+      }
+      if (lesionMeshRef.current.material) {
+        if (Array.isArray(lesionMeshRef.current.material)) {
+          lesionMeshRef.current.material.forEach(material => material.dispose());
+        } else {
+          lesionMeshRef.current.material.dispose();
+        }
+      }
+      
+      // If it's a group (lesion spheres), dispose of all children
+      if (lesionMeshRef.current.children) {
+        lesionMeshRef.current.children.forEach(child => {
+          if (child.geometry) child.geometry.dispose();
+          if (child.material) child.material.dispose();
+        });
+      }
+      
       lesionMeshRef.current = null;
     }
 
-    // Create new lesion mesh
-    if (lesionMeshData && appState.viewMode === '3D') {
-      const mesh = createMesh(
-        lesionMeshData, 
-        appState.lesionColor, 
-        appState.lesionOpacity,
-        showWireframe
-      );
+    // Create new lesion visualization
+    if (appState.viewMode === '3D') {
+      let lesionObject = null;
       
-      if (mesh) {
-        sceneRef.current.add(mesh);
-        lesionMeshRef.current = mesh;
+      // Check if we have coordinate data (new system)
+      if (lesionCoordinates) {
+        lesionObject = createLesionSpheres(
+          lesionCoordinates,
+          appState.lesionColor,
+          appState.lesionOpacity
+        );
+        console.log('Created lesion spheres from coordinates');
+      }
+      // Fallback to mesh data (old system)
+      else if (lesionMeshData) {
+        lesionObject = createMesh(
+          lesionMeshData,
+          appState.lesionColor,
+          appState.lesionOpacity,
+          showWireframe
+        );
+        console.log('Created lesion mesh from mesh data');
+      }
+      
+      if (lesionObject) {
+        sceneRef.current.add(lesionObject);
+        lesionMeshRef.current = lesionObject;
       }
     }
-  }, [lesionMeshData, appState.lesionColor, appState.lesionOpacity, appState.viewMode, showWireframe, createMesh]);
+  }, [lesionCoordinates, lesionMeshData, appState.lesionColor, appState.lesionOpacity, appState.viewMode, showWireframe, createMesh, createLesionSpheres]);
 
   // Load brain mesh when brain file is available
   useEffect(() => {
@@ -401,12 +483,13 @@ const ThreeViewer = ({ appState, onParameterUpdate }) => {
     }
   }, [appState.brainFile, appState.regenerateMesh, loadMeshData]);
 
-  // Load lesion mesh when lesion file is available
+  // Load lesion data when lesion file is available
   useEffect(() => {
     if (appState.lesionFile && appState.lesionFile.file_id) {
       loadMeshData(appState.lesionFile.file_id, 'lesion');
     } else {
       setLesionMeshData(null);
+      setLesionCoordinates(null); // Clear lesion coordinates too
     }
   }, [appState.lesionFile, appState.regenerateMesh, loadMeshData]);
 
@@ -507,8 +590,6 @@ const ThreeViewer = ({ appState, onParameterUpdate }) => {
           <div>🖱️ Right: Pan</div>
           <div>🎯 Wheel: Zoom</div>
         </div>
-        
-        
       </div>
 
       {/* Loading indicator */}
@@ -535,9 +616,9 @@ const ThreeViewer = ({ appState, onParameterUpdate }) => {
             borderRadius: '50%',
             animation: 'spin 1s linear infinite'
           }}></div>
-          <h3 style={{ margin: '0 0 10px 0' }}>🧠 Generating 3D Mesh</h3>
+          <h3 style={{ margin: '0 0 10px 0' }}>🧠 Loading Data</h3>
           <p style={{ margin: '0', fontSize: '14px', opacity: 0.8 }}>
-            This may take a few moments...
+            Processing brain and lesion data...
           </p>
         </div>
       )}
@@ -576,19 +657,22 @@ const ThreeViewer = ({ appState, onParameterUpdate }) => {
         border: '1px solid #34495e'
       }}>
         <div style={{ marginBottom: '5px', color: '#3498db', fontWeight: 'bold' }}>
-          📊 Mesh Info
+          📊 Data Info
         </div>
         {brainMeshData && (
           <div>🧠 Brain: {brainMeshData.vertices.length.toLocaleString()} vertices</div>
         )}
-        {lesionMeshData && (
+        {lesionCoordinates && (
+          <div>🔴 Lesions: {lesionCoordinates.coordinates.length.toLocaleString()} coordinates</div>
+        )}
+        {lesionMeshData && !lesionCoordinates && (
           <div>🔴 Lesion: {lesionMeshData.vertices.length.toLocaleString()} vertices</div>
         )}
-        {appState.normalizationApplied && (
-          <div>⚡ Normalized: {appState.normalizationMethod}</div>
+        {appState.meshNormalizationApplied && (
+          <div>⚡ Mesh Normalized: {appState.meshNormalizationMethod}</div>
         )}
-        {(!brainMeshData && !lesionMeshData) && (
-          <div style={{ color: '#95a5a6' }}>No mesh data loaded</div>
+        {(!brainMeshData && !lesionMeshData && !lesionCoordinates) && (
+          <div style={{ color: '#95a5a6' }}>No data loaded</div>
         )}
       </div>
 
